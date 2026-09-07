@@ -1,0 +1,19 @@
+services:
+  obsidian-rag:
+    build: .
+    container_name: obsidian-rag
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./data/index:/data/index
+      - ./data/vault:/data/vault
+    environment:
+      OBSIDIAN_INDEX_PATH: /data/index/index.json
+      OBSIDIAN_MIRROR_PATH: /data/vault
+      OBSIDIAN_MIRROR_REFRESH_HOURS: ${OBSIDIAN_MIRROR_REFRESH_HOURS:-6}
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8000
+      MCP_PATH: /mcp

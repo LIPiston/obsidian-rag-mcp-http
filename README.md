@@ -1,0 +1,283 @@
+# obsidian-rag-mcp
+
+一个基于 **MCP (Model Context Protocol)** 的 RAG 服务器：把 **Obsidian 笔记库**变成任何 AI 客户端（ZCode、Claude Desktop、Cursor、goose……）都可检索的知识库。
+
+> 支持 MCP 的 AI 客户端会自动决定何时调用工具：先从你的 Obsidian 笔记中**语义检索**相关片段，再结合这些片段回答/分析——让你的笔记成为 AI 的「第二大脑」。
+
+## ✨ 功能
+
+- 📁 **读取 Obsidian vault**：扫描 `*.md` 笔记，自动忽略 `.obsidian`、`.trash`、`.git` 等隐藏目录
+- 🧠 **可配置 Embedding 模型**：支持 OpenAI 兼容 API 与 Ollama 本地模型（也内置 `fake` 模式用于零依赖测试）
+- 🔍 **语义检索**：纯 Python 余弦相似度，无需重型向量数据库
+- 🧩 **MCP 标准协议**：默认使用带 Bearer 鉴权的 streamable-http，客户端无需在本机部署服务
+- 🔧 **7 个工具**：索引、搜索、RAG 检索、列笔记、读笔记、查配置、查索引状态
+
+## 🛠 工具一览
+
+| 工具 | 说明 |
+|------|------|
+| `obsidian_index(force)` | 扫描 vault 并构建/重建 embedding 索引 |
+| `obsidian_search(query, top_k)` | 语义搜索笔记片段 |
+| `obsidian_rag(question, top_k)` | 检索与问题最相关的笔记上下文（供分析） |
+| `obsidian_list_notes(keyword)` | 列出 vault 中的笔记 |
+| `obsidian_read_note(path)` | 读取单篇笔记全文（防路径穿越） |
+| `obsidian_get_config()` | 查看当前配置（不含 API Key） |
+| `obsidian_index_status()` | 检查索引是否存在且模型匹配 |
+
+## 🚀 快速开始
+
+### 1. 克隆并安装
+
+```bash
+git clone https://github.com/<your-org>/obsidian-rag-mcp.git
+cd obsidian-rag-mcp
+uv sync
+```
+
+### 2. 配置环境变量
+
+在 MCP 客户端的服务器配置中设置（或在终端导出）：
+
+| 变量 | 必填 | 说明 | 默认值 |
+|------|------|------|--------|
+| `OBSIDIAN_VAULT_PATH` | ✅ | Obsidian vault 的绝对路径（仅服务端） | — |
+| `EMBEDDING_BASE_URL` | | Embedding API 地址（Ollama 用 `http://localhost:11434`） | 无地址且无 key 时为离线测试模式 |
+| `EMBEDDING_MODEL` | | Embedding 模型名 | `text-embedding-3-small`（OpenAI 兼容） |
+| `EMBEDDING_API_KEY` | OpenAI 兼容时必填 | API Key（Ollama 本地无需） | — |
+| `EMBEDDING_PROVIDER` | | 手动覆盖后端识别 | 自动识别（openai / ollama / fake） |
+| `OBSIDIAN_INDEX_PATH` | | 索引文件保存位置 | `~/.obsidian-rag/index.json` |
+| `OBSIDIAN_CHUNK_SIZE` | | 分块字符数 | `1500` |
+| `OBSIDIAN_MAX_NOTES` | | 最多索引的笔记数 | `1000` |
+| `MCP_AUTH_TOKEN` | ✅ | HTTP Bearer 鉴权令牌（仅服务端） | — |
+| `MCP_HOST` | | 监听地址 | `0.0.0.0` |
+| `MCP_PORT` | | 监听端口 | `8000` |
+| `MCP_PATH` | | MCP HTTP 路径 | `/mcp` |
+
+HTTP 服务默认通过 `https://<部署域名>/mcp` 提供 MCP。客户端只配置远程 URL 和 `Authorization: Bearer <MCP_AUTH_TOKEN>`，不再配置本地 `command`、`args`、vault 路径或 embedding 参数。服务端还可设置 `MCP_AUTH_ISSUER` 和 `MCP_RESOURCE_URL` 生成正确的受保护资源元数据。
+
+> **后端自动识别**：只需配置地址 + 模型 + key，无需指定 provider。
+> 地址含 Ollama 默认端口 `11434` 或以 `/api` 结尾 → 自动按 Ollama 调用；
+> 其他地址 → 自动按 OpenAI 兼容 `POST {base}/embeddings` 调用。
+> 自动识别不满足需求时，可用 `EMBEDDING_PROVIDER=openai|ollama|fake` 手动覆盖。
+
+### 3. 在客户端中注册远程 HTTP 服务
+
+部署服务后，客户端只需要远程 URL 和 Bearer 令牌；不要再配置 `command`、`args`、`OBSIDIAN_VAULT_PATH` 或 embedding 变量：
+
+```text
+https://your-host.example.com/mcp
+```
+
+**Hermes** —— 在 `config.yaml` 的 `mcp_servers` 下配置：
+
+```yaml
+mcp_servers:
+  obsidian-rag:
+    url: "https://your-host.example.com/mcp"
+    headers:
+      Authorization: "Bearer <你的 MCP_AUTH_TOKEN>"
+    enabled: true
+```
+
+**ZCode** —— 编辑 `~/.zcode/cli/config.json`（用户级）或 `<repo>/.zcode/config.json`（项目级）的 `mcp.servers`：
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "obsidian-rag": {
+        "url": "https://your-host.example.com/mcp",
+        "headers": {"Authorization": "Bearer <你的 MCP_AUTH_TOKEN>"}
+      }
+    }
+  }
+}
+```
+
+**Claude Desktop** —— 编辑 `claude_desktop_config.json`（Windows: `%APPDATA%\Claude\claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "obsidian-rag": {
+      "command": "uv",
+      "args": ["run", "--directory", "D:/path/to/obsidian-rag-mcp", "obsidian-rag-mcp"],
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "D:/path/to/your/vault",
+        "EMBEDDING_BASE_URL": "https://api.openai.com/v1",
+        "EMBEDDING_MODEL": "text-embedding-3-small",
+        "EMBEDDING_API_KEY": "<你的 key>"
+      }
+    }
+  }
+}
+```
+
+**Cursor** —— 编辑 `.cursor/mcp.json`（项目级）：
+
+```json
+{
+  "mcpServers": {
+    "obsidian-rag": {
+      "command": "uv",
+      "args": ["run", "--directory", "D:/path/to/obsidian-rag-mcp", "obsidian-rag-mcp"],
+      "env": {
+        "OBSIDIAN_VAULT_PATH": "D:/path/to/your/vault",
+        "EMBEDDING_BASE_URL": "https://api.openai.com/v1",
+        "EMBEDDING_MODEL": "text-embedding-3-small",
+        "EMBEDDING_API_KEY": "<你的 key>"
+      }
+    }
+  }
+}
+```
+
+**Goose** —— 在 `config.yaml`（Windows: `%APPDATA%\Block\goose\config\config.yaml`）的 `extensions` 下添加：
+
+```yaml
+extensions:
+  obsidian-rag:
+    type: stdio
+    name: obsidian-rag
+    enabled: true
+    cmd: uv
+    args:
+      - run
+      - --directory
+      - "D:/path/to/obsidian-rag-mcp"
+      - obsidian-rag-mcp
+    envs:
+      OBSIDIAN_VAULT_PATH: "D:/path/to/your/vault"
+      EMBEDDING_BASE_URL: "https://api.openai.com/v1"
+      EMBEDDING_MODEL: "text-embedding-3-small"
+      EMBEDDING_API_KEY: "<你的 key>"
+    timeout: 300
+```
+
+> 其他 MCP 客户端（VS Code、Claude Code、Windsurf……）的注册格式大同小异，都是 `command` + `args` + `env` 三段式，照抄上面的结构即可。
+
+### 4. Hermes：按需启动与空闲回收（可选）
+
+Hermes 可以在宿主侧管理本 MCP 的生命周期：启动 Hermes 时不启动服务，第一次调用工具时再按需拉起；连续空闲后自动回收进程。该能力属于 **Hermes 的 MCP 配置**，不是本项目服务器代码的一部分。
+
+将 MCP 注册为 `obsidian-rag` 后，在 Hermes 配置中启用：
+
+```yaml
+mcp_servers:
+  obsidian-rag:
+    enabled: true
+    lazy: true
+    idle_timeout_seconds: 300
+```
+
+- `lazy: true`：首次实际调用本 MCP 工具时才启动服务。
+- `idle_timeout_seconds: 300`：连续 300 秒未调用后关闭服务进程；下次调用会自动重启。
+
+不要将 API Key 提交到仓库；请继续将其放在本机 MCP 配置的 `env` 中。修改配置后重启 Hermes 会话使其生效。
+
+### 5. 使用
+
+注册并重启会话后，AI 会自动决定何时调用工具。你可以直接说：
+> 「用我的 Obsidian 笔记分析一下这个方案的可行性」「检索我笔记里关于网站改版的内容」
+
+## 🐦 Goose 专用：`/obsidian-rag` 命令（可选）
+
+[`recipes/obsidian-rag.yaml`](recipes/obsidian-rag.yaml) 是一个 **goose 专属**的 slash command recipe，其他客户端无需也不支持此文件。
+
+如果你用 goose，在 `config.yaml` 中添加：
+
+```yaml
+slash_commands:
+  - command: "obsidian-rag"
+    recipe_path: "D:/path/to/obsidian-rag-mcp/recipes/obsidian-rag.yaml"
+```
+
+重启会话后，在对话中输入 `/obsidian-rag 帮我分析一下我对新项目的想法` 即可。不用 goose 的话直接忽略 `recipes/` 目录。
+
+## 🔬 本地测试
+
+```bash
+uv run --directory . pytest
+```
+
+测试使用内置 `fake` embedding（确定性哈希向量），**无需任何 API Key 和网络**即可端到端验证整个 RAG 流程（扫描 → 分块 → 索引 → 检索 → MCP 调用）。
+
+## 💡 Embedding 配置示例
+
+## ☁️ 远程只读 Vault
+
+服务端每次调用索引、搜索、列出或读取笔记前，都会从远程存储重新创建一个临时本地镜像；只执行下载，不执行任何上传、删除或远程写入。
+
+依赖文件：
+
+- `dependencies-s3.txt`：S3 / S3-compatible（包括 Cloudflare R2）所需 `boto3`
+- `dependencies-webdav.txt`：WebDAV 所需 `httpx`
+
+通用变量：
+
+```text
+VAULT_REMOTE_PROVIDER=s3        # 或 webdav
+```
+
+S3：
+
+```text
+VAULT_S3_BUCKET=your-bucket
+VAULT_S3_PREFIX=obsidian-vault
+VAULT_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com   # S3-compatible 时填写
+VAULT_S3_REGION=auto
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+```
+
+WebDAV：
+
+```text
+VAULT_WEBDAV_URL=https://dav.example.com/obsidian/
+VAULT_WEBDAV_USERNAME=...
+VAULT_WEBDAV_PASSWORD=...
+```
+
+远程模式下不设置 `OBSIDIAN_VAULT_PATH`。索引文件仍保存在服务端的 `OBSIDIAN_INDEX_PATH`，远程 vault 本身不会被修改。
+
+**OpenAI 兼容 API（如自建代理 / 中转）**
+
+```bash
+export EMBEDDING_BASE_URL=https://your-gateway/v1
+export EMBEDDING_MODEL=text-embedding-3-small
+export EMBEDDING_API_KEY=sk-xxx
+```
+
+**Ollama 本地模型**
+
+```bash
+ollama pull nomic-embed-text
+export EMBEDDING_BASE_URL=http://localhost:11434
+export EMBEDDING_MODEL=nomic-embed-text
+```
+
+**离线测试模式（无需网络 / 无需 key）**
+
+```bash
+# 什么都不配置即可（检测不到地址和 key 时自动进入该模式）
+```
+
+## 📂 项目结构
+
+```
+obsidian-rag-mcp/
+├── obsidian_rag/
+│   ├── server.py       # MCP 服务器与工具定义
+│   ├── config.py       # 环境变量配置
+│   ├── embeddings.py   # OpenAI/Ollama/fake embedding 客户端
+│   ├── vault.py        # vault 扫描与 markdown 分块
+│   └── store.py        # 向量存储与余弦相似度检索
+├── recipes/
+│   └── obsidian-rag.yaml   # goose 专用 slash command recipe（可选）
+├── examples/sample-vault/  # 示例笔记库
+└── tests/
+```
+
+## 📄 License
+
+MIT
