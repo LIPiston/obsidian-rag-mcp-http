@@ -17,6 +17,7 @@
 | 工具 | 说明 |
 |------|------|
 | `obsidian_index(force)` | 扫描 vault 并构建/重建 embedding 索引 |
+| `obsidian_refresh()` | 强制从远程上游更新镜像并重建 embedding 索引 |
 | `obsidian_search(query, top_k)` | 语义搜索笔记片段 |
 | `obsidian_rag(question, top_k)` | 检索与问题最相关的笔记上下文（供分析） |
 | `obsidian_list_notes(keyword)` | 列出 vault 中的笔记 |

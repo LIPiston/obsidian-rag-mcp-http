@@ -200,6 +200,7 @@ async def test_mcp_server_tools(vault: Path, tmp_path: Path):
             names = {t.name for t in tools.tools}
             assert {
                 "obsidian_index",
+                "obsidian_refresh",
                 "obsidian_search",
                 "obsidian_rag",
                 "obsidian_list_notes",

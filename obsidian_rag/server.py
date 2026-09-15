@@ -65,12 +65,12 @@ def _ensure() -> tuple[Settings, EmbeddingClient, VectorStore]:
     return _settings, _client, _store
 
 
-def _refresh_remote_vault() -> None:
+def _refresh_remote_vault(force: bool = False) -> None:
     """Download a fresh read-only mirror before every remote operation."""
     global _settings, _store
     if _settings is None or not os.environ.get("VAULT_REMOTE_PROVIDER", "").strip():
         return
-    new_vault = sync_remote_vault()
+    new_vault = sync_remote_vault(force=force)
     _settings.vault_path = new_vault
     _store = VectorStore(_settings.index_path, _settings.model)
 
@@ -137,6 +137,23 @@ def obsidian_index(force: bool = False) -> str:
     except (RuntimeError, EmbeddingError) as exc:
         return _err(str(exc))
     return _ok(**stats)
+
+
+@mcp.tool()
+def obsidian_refresh() -> str:
+    """Force-refresh the remote vault mirror, then rebuild the embedding index.
+
+    This bypasses the normal mirror cache and performs both operations in one
+    call. The remote vault is read-only; only the local mirror and index change.
+    """
+    try:
+        _ensure()
+        _refresh_remote_vault(force=True)
+        settings, client, store = _ensure()
+        stats = build_index(settings, client, store, force=True)
+    except (ValueError, RuntimeError, EmbeddingError) as exc:
+        return _err(str(exc))
+    return _ok(refreshed=True, **stats)
 
 
 @mcp.tool()

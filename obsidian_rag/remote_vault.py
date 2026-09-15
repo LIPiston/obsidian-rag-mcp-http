@@ -185,11 +185,11 @@ def sync_webdav() -> Path:
     return root
 
 
-def sync_remote_vault() -> Path:
+def sync_remote_vault(force: bool = False) -> Path:
     """Create a fresh local read-only mirror for the configured remote."""
     provider = os.environ.get("VAULT_REMOTE_PROVIDER", "").strip().lower()
     root = _new_dir()
-    if _mirror_fresh(root):
+    if not force and _mirror_fresh(root):
         return root
     if provider == "s3":
         return sync_s3()
