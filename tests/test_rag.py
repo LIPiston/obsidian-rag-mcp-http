@@ -214,6 +214,31 @@ def test_ordinary_server_refresh_does_not_sync_remote_vault(
     server._refresh_remote_vault()
 
 
+def test_forced_server_refresh_syncs_before_settings_are_loaded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """The first administrative refresh can bootstrap an empty mirror."""
+    import obsidian_rag.server as server
+
+    mirror = tmp_path / "mirror"
+    mirror.mkdir()
+    monkeypatch.setenv("VAULT_REMOTE_PROVIDER", "s3")
+    monkeypatch.setattr(server, "_settings", None)
+    monkeypatch.setattr(server, "_store", None)
+    calls = 0
+
+    def sync(**_kwargs: object) -> Path:
+        nonlocal calls
+        calls += 1
+        return mirror
+
+    monkeypatch.setattr(server, "sync_remote_vault", sync)
+
+    server._refresh_remote_vault(force=True)
+
+    assert calls == 1
+
+
 # --------------------------------------------------------------------------- #
 # MCP server (end-to-end over stdio)
 # --------------------------------------------------------------------------- #
