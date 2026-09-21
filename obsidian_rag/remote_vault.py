@@ -185,6 +185,14 @@ def sync_webdav() -> Path:
     return root
 
 
+def existing_mirror_path() -> Path:
+    """Return the persistent mirror without making a remote request."""
+    root = _new_dir()
+    if not (root / ".obsidian-rag-sync.json").is_file():
+        raise VaultSyncError("No local vault mirror exists. Run obsidian_refresh first.")
+    return root
+
+
 def sync_remote_vault(force: bool = False) -> Path:
     """Create a fresh local read-only mirror for the configured remote."""
     provider = os.environ.get("VAULT_REMOTE_PROVIDER", "").strip().lower()

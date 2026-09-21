@@ -131,11 +131,8 @@ def load_settings() -> Settings:
         )
 
     if remote_provider:
-        from .remote_vault import sync_remote_vault
-        try:
-            vault = sync_remote_vault()
-        except RuntimeError as exc:
-            raise ValueError(str(exc)) from exc
+        from .remote_vault import existing_mirror_path
+        vault = existing_mirror_path()
     else:
         vault = Path(vault_raw).expanduser()
     if not vault.is_dir():

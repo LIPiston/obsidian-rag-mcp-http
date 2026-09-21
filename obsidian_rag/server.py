@@ -66,11 +66,15 @@ def _ensure() -> tuple[Settings, EmbeddingClient, VectorStore]:
 
 
 def _refresh_remote_vault(force: bool = False) -> None:
-    """Download a fresh read-only mirror before every remote operation."""
+    """Refresh only when explicitly requested by the administrative tool."""
     global _settings, _store
-    if _settings is None or not os.environ.get("VAULT_REMOTE_PROVIDER", "").strip():
+    if (
+        not force
+        or _settings is None
+        or not os.environ.get("VAULT_REMOTE_PROVIDER", "").strip()
+    ):
         return
-    new_vault = sync_remote_vault(force=force)
+    new_vault = sync_remote_vault(force=True)
     _settings.vault_path = new_vault
     _store = VectorStore(_settings.index_path, _settings.model)
 

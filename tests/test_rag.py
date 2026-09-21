@@ -170,6 +170,51 @@ def test_index_force_rebuild(vault: Path, tmp_path: Path):
 
 
 # --------------------------------------------------------------------------- #
+# Remote mirror cache
+# --------------------------------------------------------------------------- #
+def test_load_settings_uses_existing_remote_mirror_without_syncing_in_request(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    """A stale mirror is served until the explicit refresh tool runs."""
+    import obsidian_rag.remote_vault as remote_vault
+    from obsidian_rag.config import load_settings
+
+    mirror = tmp_path / "mirror"
+    mirror.mkdir()
+    (mirror / ".obsidian-rag-sync.json").write_text(
+        json.dumps({"completed_at": 0}), encoding="utf-8"
+    )
+    monkeypatch.setenv("VAULT_REMOTE_PROVIDER", "s3")
+    monkeypatch.setenv("OBSIDIAN_MIRROR_PATH", str(mirror))
+    monkeypatch.setenv("OBSIDIAN_MIRROR_REFRESH_HOURS", "6")
+
+    def fail_sync(*_args: object, **_kwargs: object) -> Path:
+        raise AssertionError("ordinary MCP requests must not call the remote provider")
+
+    monkeypatch.setattr(remote_vault, "sync_s3", fail_sync)
+    settings = load_settings()
+
+    assert settings.vault_path == mirror
+
+
+def test_ordinary_server_refresh_does_not_sync_remote_vault(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Only the explicit refresh tool may perform remote mirror I/O."""
+    import obsidian_rag.server as server
+
+    monkeypatch.setenv("VAULT_REMOTE_PROVIDER", "s3")
+    monkeypatch.setattr(server, "_settings", object())
+    monkeypatch.setattr(
+        server,
+        "sync_remote_vault",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not sync")),
+    )
+
+    server._refresh_remote_vault()
+
+
+# --------------------------------------------------------------------------- #
 # MCP server (end-to-end over stdio)
 # --------------------------------------------------------------------------- #
 def _env(vault: Path, tmp_path: Path) -> dict:
